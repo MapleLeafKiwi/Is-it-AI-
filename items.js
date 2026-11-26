@@ -29,6 +29,7 @@ window.ITEMS = [
   { file: "media/24.jpg", answer: "real", note: "Real photo." },
   { file: "media/11.mp4", answer: "ai",   note: "AI-generated short." },
   { file: "media/17.jpg", answer: "real", note: "Real photo." },
+  { file: "media/25.jpg", answer: "ai",   note: "Made with Google Gemini." },
   { file: "media/07.mp4", answer: "real", note: "Real home video." },
   { file: "media/08.mp4", answer: "ai",   note: "'Prompt Theory', made with Google Veo 3." },
   { file: "media/13.mp4", answer: "real", note: "Real! The basilisk lizard really runs on water." },
