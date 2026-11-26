@@ -72,6 +72,11 @@
   .brand .gm{font-size:13px;color:var(--muted)}
   .prog{font-size:12px;color:var(--muted);min-width:44px;text-align:right}
   .mini-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+  .allin{background:#1f5a3a;border:2px solid var(--green);border-radius:16px;padding:12px;text-align:center;font-weight:800;margin:12px 0}
+  .waiting{background:#3a3218;border:1px solid #8a6a24;border-radius:16px;padding:12px;text-align:center;margin:12px 0}
+  .chip.wait{border-color:#8a6a24;color:#ffe0a6}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(63,174,106,.6)}50%{box-shadow:0 0 0 10px rgba(63,174,106,0)}}
+  button.go{background:var(--green);animation:pulse 1.6s infinite}
   a{color:var(--gold)}
   .snow{position:fixed;inset:0;pointer-events:none;z-index:-1;opacity:.25;
     background-image:radial-gradient(#fff 1px,transparent 1.5px),radial-gradient(#fff 1px,transparent 1.5px);
@@ -106,6 +111,12 @@ const store = {
 };
 const rid = n => Array.from(crypto.getRandomValues(new Uint8Array(n)), b => "abcdefghjkmnpqrstuvwxyz23456789"[b % 31]).join("");
 const LABEL = { ai: "AI 🤖", real: "Real 📷" };
+function brand() {
+  return h("div", { class: "brand" },
+    h("div", { class: "co", text: "LED in Action" }),
+    h("div", { class: "ev", text: "Christmas Dinner 🎄" }),
+    h("div", { class: "gm", text: "Real or AI?" }));
+}
 
 const ITEMS = (Array.isArray(window.ITEMS) ? window.ITEMS : []).map(it => {
   if (!it || !it.file) return null;
@@ -114,14 +125,6 @@ const ITEMS = (Array.isArray(window.ITEMS) ? window.ITEMS : []).map(it => {
   const type = it.type || (/\.(mp4|webm|mov|m4v)(\?|$)/i.test(it.file) ? "video" : "image");
   return { src: it.file, type, answer: a, note: it.note ? String(it.note) : "" };
 }).filter(Boolean);
-const TOTAL = ITEMS.length;
-
-function brand() {
-  return h("div", { class: "brand" },
-    h("div", { class: "co", text: "LED in Action" }),
-    h("div", { class: "ev", text: "Christmas Dinner 🎄" }),
-    h("div", { class: "gm", text: "Real or AI?" }));
-}
 
 // keep screen awake where supported
 let wakeLock = null;
@@ -140,17 +143,14 @@ function makeMediaSlot() {
   let key = null, el = null;
   return {
     wrap,
-    set(item, onReady) {
+    set(item) {
       const k = item ? item.src : null;
       if (k === key) { if (el && el.tagName === "VIDEO" && el.paused) el.play().catch(() => {}); return; }
       key = k; wrap.replaceChildren(); el = null;
       if (!item) return;
-      let fired = false;
-      const ready = () => { if (!fired) { fired = true; if (onReady) onReady(); } };
       if (item.type === "video") {
         el = h("video", { class: "media", src: item.src, playsinline: true, "webkit-playsinline": true, autoplay: true, loop: true, preload: "auto" });
         el.muted = true; el.playsInline = true;
-        el.addEventListener("loadeddata", ready); el.addEventListener("error", ready);
         const btn = h("button", { class: "sound", text: "🔇 Tap for sound", onclick: () => {
           el.muted = !el.muted; btn.textContent = el.muted ? "🔇 Tap for sound" : "🔊 Sound on"; el.play().catch(() => {});
         }});
@@ -158,11 +158,8 @@ function makeMediaSlot() {
         el.play().catch(() => {});
       } else {
         el = h("img", { class: "media", src: item.src, alt: "" });
-        el.addEventListener("load", ready); el.addEventListener("error", ready);
         wrap.append(el);
-        if (el.complete) ready();
       }
-      setTimeout(ready, 8000); // never hold the timer forever on a slow load
     }
   };
 }
@@ -172,35 +169,28 @@ function preload(item) {
   if (item.type === "image") { const i = new Image(); i.src = item.src; preloaded[item.src] = i; }
   else { const v = document.createElement("video"); v.preload = "auto"; v.muted = true; v.src = item.src; try { v.load(); } catch (e) {} preloaded[item.src] = v; }
 }
-
-// leaderboard: rows = [{id,name,score,done}]
-function boardList(rows, myId, limit) {
+function boardList(rows, limit) {
   if (!rows || !rows.length) return h("p", { class: "muted center", text: "No players yet." });
-  const ranked = []; let lastScore = null, pos = 0;
-  rows.forEach((r, i) => { if (r.score !== lastScore) { pos = i + 1; lastScore = r.score; } ranked.push({ ...r, pos }); });
-  let show = ranked;
-  if (limit && ranked.length > limit) {
-    show = ranked.slice(0, limit);
-    const me = ranked.find(r => r.id === myId);
-    if (me && me.pos > limit && !show.includes(me)) show = show.concat([me]);
-  }
   const ol = h("ol", { class: "board" });
-  for (const r of show) {
-    const medal = r.pos === 1 ? "🥇" : r.pos === 2 ? "🥈" : r.pos === 3 ? "🥉" : r.pos;
-    const me = r.id === myId;
-    ol.append(h("li", { class: me ? "me" : "" },
+  let lastScore = null, pos = 0;
+  const ranked = rows.map((r, i) => { if (r.score !== lastScore) { pos = i + 1; lastScore = r.score; } return { ...r, pos }; });
+  let show = ranked;
+  if (limit && ranked.length > limit) { show = ranked.slice(0, limit); const me = ranked.find(r => r.me); if (me && me.pos > limit) show.push(me); }
+  show.forEach(r => {
+    const pos = r.pos;
+    const medal = pos === 1 ? "🥇" : pos === 2 ? "🥈" : pos === 3 ? "🥉" : pos;
+    ol.append(h("li", { class: r.me ? "me" : "" },
       h("span", { class: "pos", text: String(medal) }),
-      h("span", { class: "nm", text: r.name + (me ? " (you)" : "") }),
-      h("span", { class: "prog", text: r.done >= TOTAL ? "✓ done" : `${r.done}/${TOTAL}` }),
+      h("span", { class: "nm", text: r.name + (r.me ? " (you)" : "") }),
       h("span", { class: "sc", text: String(r.score) })));
-  }
+  });
   return ol;
 }
 
 const app = document.getElementById("app");
 const params = new URLSearchParams(location.search);
 if (typeof Peer === "undefined") {
-  app.append(brand(), h("div", { class: "card center" }, h("p", { class: "big", text: "Couldn't load the game" }),
+  app.append(h("div", { class: "card center" }, h("p", { class: "big", text: "Couldn't load the game" }),
     h("p", { class: "muted", text: "Check your internet connection and refresh the page." })));
 } else if (params.has("host")) hostMode();
 else if (params.get("join")) playerMode(params.get("join"));
@@ -208,25 +198,29 @@ else landing();
 
 // ---------- landing ----------
 function landing() {
-  app.append(brand(),
+  app.append(
+    brand(),
     h("div", { class: "card center" },
       h("p", { class: "muted", text: "Players: scan the QR code on the host's phone to join." }),
-      h("button", { onclick: () => { location.href = location.pathname + "?host"; }, text: "I'm the host — open the leaderboard" }),
-      h("p", { class: "muted small", text: `${TOTAL} item${TOTAL === 1 ? "" : "s"} loaded.` })));
+      h("button", { onclick: () => { location.href = location.pathname + "?host"; }, text: "I'm the host — start a game" }),
+      h("p", { class: "muted small", text: `${ITEMS.length} item${ITEMS.length === 1 ? "" : "s"} loaded.` }))
+  );
 }
 
-// ---------- HOST: QR code + live leaderboard ----------
+// ---------- HOST ----------
 function hostMode() {
-  let G = store.get("rai_host2", null);
-  if (!G || !G.hostId) G = { hostId: "rai-" + rid(8), players: {} };
-  const save = () => store.set("rai_host2", G);
+  let G = store.get("rai_host", null);
+  if (!G || !G.hostId) G = { hostId: "rai-" + rid(8), phase: "lobby", index: -1, startedAt: 0, players: {} };
+  const save = () => store.set("rai_host", G);
   save();
   const conns = new Map();
   const joinUrl = location.origin + location.pathname + "?join=" + encodeURIComponent(G.hostId);
-  let status = "Connecting…", statusOk = false, peer = null, showQR = true;
+  let status = "Connecting…", statusOk = false, peer = null, showQR = false;
 
-  const head = h("div"), body = h("div");
-  app.append(head, body);
+  const head = h("div");
+  const media = makeMediaSlot();
+  const top = h("div"), bottom = h("div");
+  app.append(head, top, media.wrap, bottom);
 
   function startPeer() {
     peer = new Peer(G.hostId);
@@ -251,32 +245,94 @@ function hostMode() {
       } else if (peer.destroyed) { status = "Connection lost — retrying…"; statusOk = false; render(); setTimeout(startPeer, 3000); }
     });
   }
+  // watchdog for the signalling connection
   setInterval(() => { if (peer && !peer.destroyed && peer.disconnected) { try { peer.reconnect(); } catch (e) {} } }, 5000);
 
-  const num = (v, max) => { v = Math.round(Number(v) || 0); return Math.max(0, Math.min(max, v)); };
   function onData(conn, d) {
-    if (!d || typeof d !== "object" || d.t !== "hello") return;
-    const pid = String(d.pid || "").slice(0, 40);
-    if (!pid) return;
-    const name = String(d.name || "").trim().slice(0, 24) || "Player";
-    const p = d.p || {};
-    conn.pid = pid;
-    const old = conns.get(pid);
-    if (old && old !== conn) { try { old.close(); } catch (e) {} }
-    conns.set(pid, conn);
-    G.players[pid] = { name, score: num(p.score, 150 * TOTAL), done: num(p.done, TOTAL), correct: num(p.correct, TOTAL) };
-    save(); broadcast(); render();
+    if (!d || typeof d !== "object") return;
+    if (d.t === "hello") {
+      const pid = String(d.pid || "").slice(0, 40);
+      const name = String(d.name || "").trim().slice(0, 24) || "Player";
+      if (!pid) return;
+      conn.pid = pid;
+      const old = conns.get(pid);
+      if (old && old !== conn) { try { old.close(); } catch (e) {} }
+      conns.set(pid, conn);
+      if (!G.players[pid]) G.players[pid] = { name, votes: {}, results: {} };
+      else G.players[pid].name = name;
+      save(); if (G.phase === "lobby") broadcast(); else sendTo(pid); render();
+    } else if (d.t === "vote") {
+      const p = G.players[conn.pid];
+      if (!p || G.phase !== "question" || d.index !== G.index || (d.vote !== "ai" && d.vote !== "real")) { if (conn.pid) sendTo(conn.pid); return; }
+      p.votes[G.index] = { vote: d.vote, at: Date.now() };
+      save(); sendTo(conn.pid); render();
+    }
   }
-  const rows = () => Object.entries(G.players).map(([id, p]) => ({ id, name: p.name, score: p.score, done: p.done }))
-    .sort((a, b) => b.score - a.score || b.done - a.done || a.name.localeCompare(b.name));
-  function broadcast() {
-    const msg = { t: "board", rows: rows() };
-    for (const c of conns.values()) if (c.open) { try { c.send(msg); } catch (e) {} }
+
+  const scoreOf = p => Object.values(p.results || {}).reduce((s, r) => s + (r.gained || 0), 0);
+  const ranking = () => Object.entries(G.players).map(([pid, p]) => ({ pid, name: p.name, score: scoreOf(p) }))
+    .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+  const rankOf = (pid, R) => { const me = R.find(r => r.pid === pid); return me ? 1 + R.filter(r => r.score > me.score).length : null; };
+  const isOnline = pid => conns.has(pid) && conns.get(pid).open;
+  function itemStats() {
+    const out = [];
+    for (let i = 0; i < ITEMS.length; i++) {
+      let voters = 0, right = 0;
+      for (const p of Object.values(G.players)) { const r = p.results[i]; if (r && r.voted) { voters++; if (r.correct) right++; } }
+      if (voters) out.push({ index: i, voters, right, pct: Math.round(right / voters * 100), answer: ITEMS[i].answer, note: ITEMS[i].note });
+    }
+    return out;
+  }
+  function hardest() {
+    const st = itemStats(); if (!st.length) return null;
+    return st.slice().sort((a, b) => a.pct - b.pct || b.voters - a.voters)[0];
+  }
+  const counts = () => { const c = { ai: 0, real: 0 }; for (const p of Object.values(G.players)) { const v = p.votes[G.index]; if (v) c[v.vote]++; } return c; };
+
+  function stateFor(pid) {
+    const p = G.players[pid], R = ranking(), it = ITEMS[G.index], nx = ITEMS[G.index + 1];
+    const s = { t: "state", phase: G.phase, index: G.index, total: ITEMS.length, players: R.length };
+    if ((G.phase === "question" || G.phase === "reveal") && it) s.item = { src: it.src, type: it.type };
+    if (nx && G.phase !== "final") s.next = { src: nx.src, type: nx.type };
+    else if (G.phase === "lobby" && ITEMS[0]) s.next = { src: ITEMS[0].src, type: ITEMS[0].type };
+    if (G.phase === "reveal" && it) { s.answer = it.answer; s.note = it.note; s.counts = counts(); }
+    if (G.phase === "board" || G.phase === "final" || G.phase === "reveal") s.board = R.map(r => ({ name: r.name, score: r.score, me: r.pid === pid }));
+    if (G.phase === "final") s.hardest = hardest();
+    if (p) {
+      const v = p.votes[G.index];
+      const res = Object.values(p.results || {});
+      s.you = { name: p.name, score: scoreOf(p), rank: rankOf(pid, R), vote: v ? v.vote : null, result: p.results[G.index] || null,
+        correct: res.filter(r => r.correct).length, fooled: Object.entries(p.results || {}).filter(([i, r]) => r.voted && !r.correct && ITEMS[i] && ITEMS[i].answer === "ai").length };
+    }
+    return s;
+  }
+  function sendTo(pid) { const c = conns.get(pid); if (c && c.open) { try { c.send(stateFor(pid)); } catch (e) {} } }
+  function broadcast() { for (const pid of conns.keys()) sendTo(pid); }
+
+  function go(i) { G.index = i; G.phase = "question"; G.startedAt = Date.now(); save(); broadcast(); render(); }
+  function reveal() {
+    const it = ITEMS[G.index];
+    for (const p of Object.values(G.players)) {
+      const v = p.votes[G.index];
+      const correct = !!v && v.vote === it.answer;
+      let gained = 0;
+      if (correct) { const secs = Math.max(0, (v.at - G.startedAt) / 1000); gained = 100 + Math.round(50 * Math.max(0, 1 - secs / 20)); }
+      p.results[G.index] = { correct, gained, voted: !!v };
+    }
+    G.phase = "reveal"; save(); broadcast(); render();
+  }
+  function setPhase(ph) { G.phase = ph; save(); broadcast(); render(); }
+  function next() { if (G.index + 1 < ITEMS.length) go(G.index + 1); else setPhase("final"); }
+  function newRound() {
+    if (!confirm("Start over with the same players? All scores go back to 0.")) return;
+    for (const p of Object.values(G.players)) { p.votes = {}; p.results = {}; }
+    G.index = -1; G.phase = "lobby"; save(); broadcast(); render();
   }
   function hardReset() {
-    if (!confirm("Wipe the leaderboard and make a brand-new game (new QR code)? Everyone will need to scan again and start over.")) return;
-    store.del("rai_host2"); location.reload();
+    if (!confirm("Wipe everything and make a brand-new game (new QR code)? Everyone will need to scan again.")) return;
+    store.del("rai_host"); location.reload();
   }
+
   function qrBlock() {
     const box = h("div", { class: "center" });
     if (typeof qrcode !== "undefined") {
@@ -285,62 +341,127 @@ function hostMode() {
     box.append(h("div", { class: "url", text: joinUrl }));
     return box;
   }
+  function playerChips(markVoted) {
+    const wrap = h("div", { class: "chips" });
+    for (const r of ranking()) {
+      const online = conns.has(r.pid) && conns.get(r.pid).open;
+      const voted = markVoted && G.players[r.pid].votes[G.index];
+      const waiting = markVoted && online && !voted;
+      wrap.append(h("span", { class: "chip" + (online ? "" : " off") + (voted ? " done" : "") + (waiting ? " wait" : ""), text: (voted ? "✓ " : waiting ? "⏳ " : "") + r.name }));
+    }
+    return wrap;
+  }
 
   function render() {
-    const R = rows();
-    const finished = R.filter(r => r.done >= TOTAL).length;
     head.replaceChildren(brand(), h("div", { class: "center" },
       h("span", { class: "pill " + (statusOk ? "ok" : "warn"), text: `Host · ${status} · ${conns.size} online` })));
-    body.replaceChildren();
-    if (showQR) body.append(h("div", { class: "card center" },
-      h("p", { class: "big", text: "Scan to play 🎅" }), qrBlock(),
-      h("p", { class: "muted small", text: "Everyone plays at their own pace. Keep this phone awake (turn off auto-lock) so the leaderboard stays live." })));
-    body.append(h("div", { class: "card" },
-      h("div", { class: "mini-h" }, h("strong", { text: "Leaderboard" }),
-        h("span", { class: "muted small", text: `${R.length} playing · ${finished} finished` })),
-      boardList(R, null)));
-    if (!TOTAL) body.append(h("div", { class: "card center" }, h("p", { text: "No items found. Add some to items.js." })));
-    body.append(
-      h("button", { class: "secondary", onclick: () => { showQR = !showQR; render(); }, text: showQR ? "Hide QR code (show leaderboard only)" : "Show QR code" }),
-      h("div", { style: "height:10px" }),
+    top.replaceChildren(); bottom.replaceChildren();
+    const it = ITEMS[G.index];
+    const total = ITEMS.length;
+    const R = ranking();
+
+    if (G.phase === "lobby") {
+      media.set(null); media.wrap.style.display = "none";
+      top.append(h("div", { class: "card center" },
+        h("p", { class: "big", text: "Scan to join 🎅" }), qrBlock(),
+        h("p", { class: "muted small", text: "Tip: turn off auto-lock on this phone so the game stays connected." })));
+      top.append(h("div", { class: "card" },
+        h("strong", { text: `Players (${R.length})` }), playerChips(false)));
+      if (!total) top.append(h("div", { class: "card center" }, h("p", { text: "No items found. Add some to items.js." })));
+      bottom.append(h("button", { disabled: !total || !R.length, onclick: () => go(0), text: R.length ? `Start game (${total} items)` : "Waiting for players…" }));
+    } else {
+      media.wrap.style.display = (G.phase === "question" || G.phase === "reveal") ? "" : "none";
+      if (G.phase === "question" || G.phase === "reveal") media.set(it);
+      else media.set(null);
+    }
+
+    if (G.phase === "question") {
+      const voted = Object.values(G.players).filter(p => p.votes[G.index]).length;
+      const onlineIds = R.filter(r => isOnline(r.pid)).map(r => r.pid);
+      const stillDeciding = R.filter(r => isOnline(r.pid) && !G.players[r.pid].votes[G.index]);
+      const allIn = onlineIds.length > 0 && stillDeciding.length === 0;
+      top.append(h("div", { class: "center" },
+        h("div", { class: "muted", text: `Item ${G.index + 1} of ${total}` })));
+      if (allIn) bottom.append(h("div", { class: "allin", text: "✅ Everyone has answered!" }));
+      else bottom.append(h("div", { class: "waiting" },
+        h("strong", { text: `⏳ Waiting on ${stillDeciding.length}: ` }),
+        h("span", { text: stillDeciding.map(r => r.name).join(", ") || "—" })));
+      bottom.append(h("button", { class: allIn ? "go" : "", onclick: reveal,
+        text: allIn ? "Reveal answer" : `Reveal now (skip ${stillDeciding.length} still deciding)` }));
+      bottom.append(h("div", { class: "card" },
+        h("div", { class: "row" }, h("strong", { text: `Answers: ${voted} / ${R.length}` })),
+        h("div", { class: "bar" }, h("div", { style: `width:${R.length ? (voted / R.length * 100) : 0}%` })),
+        playerChips(true),
+        h("p", { class: "small muted", text: "✓ answered · ⏳ still deciding · faded = phone disconnected (not waited for)" })));
+      const peek = h("div", { class: "answer-peek", text: "Tap to peek at the answer" });
+      peek.addEventListener("click", () => { peek.textContent = `Answer: ${LABEL[it.answer]}`; });
+      bottom.append(peek);
+    }
+
+    if (G.phase === "reveal") {
+      const c = counts();
+      top.append(h("div", { class: "center muted", text: `Item ${G.index + 1} of ${total}` }));
+      bottom.append(h("div", { class: "result " + it.answer },
+        h("div", { class: "small", text: "It was…" }), h("div", { class: "huge", text: LABEL[it.answer] }),
+        it.note ? h("div", { text: it.note }) : null,
+        h("div", { class: "small", text: `${c.ai} said AI · ${c.real} said Real` })));
+      const right = R.filter(r => G.players[r.pid].results[G.index]?.correct).length;
+      bottom.append(h("p", { class: "center muted", text: `${right} of ${R.length} got it right` }));
+      bottom.append(h("div", { class: "row" },
+        h("button", { class: "secondary", onclick: () => setPhase("board"), text: "Leaderboard" }),
+        h("button", { onclick: next, text: G.index + 1 < total ? "Next item →" : "Final results 🏆" })));
+    }
+
+    if (G.phase === "board") {
+      top.append(h("div", { class: "card" }, h("p", { class: "big center", text: "Leaderboard" }),
+        h("p", { class: "muted center small", text: `After ${G.index + 1} of ${total}` }), boardList(R)));
+      bottom.append(h("button", { onclick: next, text: G.index + 1 < total ? "Next item →" : "Final results 🏆" }));
+    }
+
+    if (G.phase === "final") {
+      top.append(h("div", { class: "card" }, h("p", { class: "huge center", text: "🏆 Final results" }), boardList(R)));
+      const hd = hardest();
+      if (hd) top.append(h("div", { class: "card center" }, h("p", { class: "small muted", text: "Fooled the most people" }),
+        h("p", { class: "big", text: `Item ${hd.index + 1}: it was ${LABEL[hd.answer]}` }),
+        h("p", { text: `Only ${hd.right} of ${hd.voters} got it right (${hd.pct}%).` }), hd.note ? h("p", { class: "small muted", text: hd.note }) : null));
+      bottom.append(h("button", { class: "secondary", onclick: newRound, text: "Play again (reset scores)" }));
+    }
+
+    if (G.phase !== "lobby") {
+      const qrHolder = h("div");
+      if (showQR) qrHolder.append(h("div", { class: "card" }, qrBlock()));
+      bottom.append(h("div", { style: "height:16px" }),
+        h("button", { class: "ghost", onclick: () => { showQR = !showQR; render(); }, text: showQR ? "Hide join QR" : "Show join QR (late arrivals)" }),
+        qrHolder);
+    }
+    bottom.append(h("div", { style: "height:10px" }),
       h("button", { class: "ghost", onclick: hardReset, text: "Reset everything (new game & QR)" }));
   }
+
   render();
   startPeer();
 }
 
-// ---------- PLAYER: self-paced ----------
+// ---------- PLAYER ----------
 function playerMode(hostId) {
   let pid = store.get("rai_pid", null);
   if (!pid) { pid = rid(10); store.set("rai_pid", pid); }
   let name = store.get("rai_name", "");
-  const PK = "rai_prog_" + hostId;
-  const P = store.get(PK, null) || { index: 0, answers: {}, shown: {} };
-  const saveP = () => store.set(PK, P);
-  let board = null, peer = null, conn = null, linkStatus = "", lastAttempt = 0, gotBoard = false;
+  let S = null, peer = null, conn = null, status = "", lastAttempt = 0, gotState = false;
 
-  const head = h("div"), top = h("div");
+  const head = h("div");
+  const top = h("div");
   const media = makeMediaSlot();
   const bottom = h("div");
   app.append(head, top, media.wrap, bottom);
 
-  const summary = () => {
-    let score = 0, correct = 0, done = 0;
-    for (const a of Object.values(P.answers)) { done++; score += a.gained || 0; if (a.correct) correct++; }
-    return { score, correct, done };
-  };
-  function sendProgress() {
-    if (conn && conn.open && name) { try { conn.send({ t: "hello", pid, name, p: summary() }); } catch (e) {} }
-  }
-
-  // --- connection to the host (only needed for the leaderboard) ---
   function startPeer() {
     if (peer && !peer.destroyed) return;
     peer = new Peer();
     peer.on("open", () => { lastAttempt = 0; openConn(); });
     peer.on("disconnected", () => { setTimeout(() => { try { if (!peer.destroyed && peer.disconnected) peer.reconnect(); } catch (e) {} }, 1000); });
     peer.on("error", err => {
-      if (err.type === "peer-unavailable") { linkStatus = "Leaderboard offline"; render(); }
+      if (err.type === "peer-unavailable") { status = "Waiting for the host… (is their game open?)"; render(); }
       else console.warn("peer error", err.type, err);
     });
   }
@@ -350,38 +471,32 @@ function playerMode(hostId) {
     if (conn) { const old = conn; conn = null; try { old.close(); } catch (e) {} }
     const c = peer.connect(hostId, { reliable: true });
     conn = c;
-    c.on("open", () => { if (c !== conn) return; gotBoard = false; sendProgress(); });
+    c.on("open", () => { if (c !== conn) return; status = ""; gotState = false; c.send({ t: "hello", pid, name }); render(); });
     c.on("data", d => {
       if (c !== conn || !d) return;
-      if (d.t === "who") { sendProgress(); return; }
-      if (d.t === "board" && Array.isArray(d.rows)) { gotBoard = true; linkStatus = ""; board = d.rows; render(); }
+      if (d.t === "who") { try { c.send({ t: "hello", pid, name }); } catch (e) {} return; }
+      if (d.t !== "state") return;
+      gotState = true; S = d; if (S.next) preload(S.next); render();
     });
-    c.on("close", () => { if (c !== conn) return; gotBoard = false; linkStatus = "Reconnecting…"; lastAttempt = 0; render(); });
+    c.on("close", () => { if (c !== conn) return; status = "Reconnecting…"; lastAttempt = 0; render(); });
     c.on("error", () => {});
   }
+  // watchdog: keep trying until connected (handles phone sleep, wifi swaps, host reloads)
   setInterval(() => {
     if (!name) return;
     if (!peer || peer.destroyed) { startPeer(); return; }
     if (peer.disconnected) { try { peer.reconnect(); } catch (e) {} return; }
-    if (conn && conn.open && !gotBoard) sendProgress();
-    if (peer.open && (!conn || !conn.open) && Date.now() - lastAttempt > 20000) openConn();
-  }, 2500);
+    if (conn && conn.open && !gotState) { try { conn.send({ t: "hello", pid, name }); } catch (err) {} }
+    if (peer.open && (!conn || !conn.open) && Date.now() - lastAttempt > 20000) { if (!status) status = "Connecting…"; render(); openConn(); }
+  }, 2000);
 
-  // --- game actions ---
-  function answer(v) {
-    const i = P.index;
-    if (i >= TOTAL || P.answers[i]) return;
-    const it = ITEMS[i];
-    const shownAt = P.shown[i] || Date.now();
-    const correct = v === it.answer;
-    const secs = Math.max(0, (Date.now() - shownAt) / 1000);
-    const gained = correct ? 100 + Math.round(50 * Math.max(0, 1 - secs / 20)) : 0;
-    P.answers[i] = { vote: v, correct, gained };
-    saveP();
-    if (navigator.vibrate) navigator.vibrate(correct ? 40 : [30, 60, 30]);
-    sendProgress(); render();
+  function vote(v) {
+    if (!S || S.phase !== "question" || !conn || !conn.open) return;
+    conn.send({ t: "vote", index: S.index, vote: v });
+    if (S.you) S.you.vote = v; else S.you = { vote: v, score: 0 };
+    if (navigator.vibrate) navigator.vibrate(30);
+    render();
   }
-  function next() { if (P.index < TOTAL) { P.index++; saveP(); sendProgress(); render(); window.scrollTo(0, 0); } }
   function changeName() { name = ""; store.set("rai_name", ""); render(); }
 
   function nameForm() {
@@ -391,66 +506,84 @@ function playerMode(hostId) {
       const v = input.value.trim().slice(0, 24);
       if (!v) { input.focus(); return; }
       name = v; store.set("rai_name", v); store.set("rai_last_name", v);
-      keepAwake(); startPeer(); sendProgress(); render();
+      keepAwake();
+      status = "Connecting…"; render();
+      if (conn && conn.open) conn.send({ t: "hello", pid, name }); else startPeer();
     };
-    const f = h("form", { onsubmit: go },
-      h("p", { class: "big", text: "Real or AI? 🤔" }),
-      h("p", { class: "muted", text: `Look at ${TOTAL} pictures and videos and guess: real, or made by AI? Go at your own pace — quicker correct answers score more points.` }),
-      input, h("button", { type: "submit", text: "Let's play" }));
+    const f = h("form", { onsubmit: go }, h("p", { class: "big", text: "Join the game 🎄" }),
+      h("p", { class: "muted", text: "Look at each picture or video and guess: real, or made by AI?" }),
+      input, h("button", { type: "submit", text: "Join" }));
     setTimeout(() => input.focus(), 50);
     return h("div", { class: "card" }, f);
   }
-  function miniBoard() {
-    const card = h("div", { class: "card" },
-      h("div", { class: "mini-h" }, h("strong", { text: "Leaderboard" }),
-        linkStatus || !gotBoard ? h("span", { class: "muted small", text: linkStatus || "Connecting…" }) : null));
-    if (board) card.append(boardList(board, pid, 5));
-    else card.append(h("p", { class: "muted small center", text: "The leaderboard will appear once you're connected. Keep playing — your score is saved." }));
-    return card;
-  }
 
   function render() {
-    const s = summary();
-    head.replaceChildren(brand(),
-      name ? h("div", { class: "center" }, h("span", { class: "pill ok", text: `${name} · ${s.score} pts · ${Math.min(s.done, TOTAL)}/${TOTAL}` })) : null);
+    const scoreTxt = S && S.you ? `${S.you.score} pts` + (S.you.rank ? ` · #${S.you.rank}` : "") : "";
+    head.replaceChildren(brand(), name ? h("div", { class: "center" },
+      h("span", { class: "pill " + (status ? "warn" : "ok"), text: status || ((S && S.you ? S.you.name + " · " : "") + (scoreTxt || "Connected")) })) : null);
     top.replaceChildren(); bottom.replaceChildren();
 
     if (!name) { media.set(null); media.wrap.style.display = "none"; top.append(nameForm()); return; }
+    const showMedia = S && (S.phase === "question" || S.phase === "reveal") && S.item;
+    media.wrap.style.display = showMedia ? "" : "none";
+    media.set(showMedia ? S.item : null);
 
-    // finished
-    if (P.index >= TOTAL) {
-      media.set(null); media.wrap.style.display = "none";
-      top.append(h("div", { class: "card center" },
-        h("p", { class: "huge", text: "🏁 All done!" }),
-        h("p", { class: "big", text: `${s.score} points` }),
-        h("p", { class: "muted", text: `You got ${s.correct} of ${TOTAL} right.` }),
-        h("p", { class: "small muted", text: "The leaderboard updates live as everyone else finishes. Merry Christmas! 🎄" })));
-      const card = h("div", { class: "card" }, h("div", { class: "mini-h" }, h("strong", { text: "Leaderboard" }),
-        linkStatus || !gotBoard ? h("span", { class: "muted small", text: linkStatus || "Connecting…" }) : null));
-      card.append(board ? boardList(board, pid) : h("p", { class: "muted small center", text: "Connecting to the leaderboard…" }));
-      bottom.append(card, h("button", { class: "ghost", onclick: changeName, text: "Change name" }));
+    if (!S) {
+      top.append(h("div", { class: "card center" }, h("p", { class: "big", text: `Hi ${name}!` }),
+        h("p", { class: "muted", text: status || (conn && conn.open ? "Almost there — saying hi to the host…" : "Connecting to the game…") })));
+      bottom.append(h("button", { class: "ghost", onclick: changeName, text: "Change name" }));
       return;
     }
 
-    const i = P.index, it = ITEMS[i], a = P.answers[i];
-    media.wrap.style.display = "";
-    media.set(it, () => { if (!P.shown[i]) { P.shown[i] = Date.now(); saveP(); } });
-    if (ITEMS[i + 1]) preload(ITEMS[i + 1]);
-    top.append(h("div", { class: "center muted", text: `Item ${i + 1} of ${TOTAL} — real or AI?` }));
+    if (S.phase === "lobby") {
+      top.append(h("div", { class: "card center" },
+        h("p", { class: "big", text: `You're in, ${S.you ? S.you.name : name}! 🎉` }),
+        h("p", { class: "muted", text: "Waiting for the host to start…" }),
+        h("p", { class: "small muted", text: `${S.players} player${S.players === 1 ? "" : "s"} joined · ${S.total} items to guess` }),
+        h("p", { class: "small muted", text: "Faster correct answers score more points." })));
+      bottom.append(h("button", { class: "ghost", onclick: changeName, text: "Change name" }));
+    }
 
-    if (!a) {
+    if (S.phase === "question") {
+      const v = S.you && S.you.vote;
+      top.append(h("div", { class: "center muted", text: `Item ${S.index + 1} of ${S.total} — real or AI?` }));
       bottom.append(h("div", { class: "row" },
-        h("button", { class: "vote ai", onclick: () => answer("ai"), text: LABEL.ai }),
-        h("button", { class: "vote real", onclick: () => answer("real"), text: LABEL.real })));
-      bottom.append(h("p", { class: "center muted small", text: "Your first tap locks in your answer. Quicker = more points!" }));
-    } else {
-      bottom.append(h("div", { class: "result " + it.answer },
-        h("div", { class: "small", text: "It was…" }), h("div", { class: "huge", text: LABEL[it.answer] }),
-        it.note ? h("div", { text: it.note }) : null));
-      bottom.append(h("div", { class: "card center" },
-        h("p", { class: "big", text: a.correct ? `✅ Correct! +${a.gained}` : `❌ Not quite — you said ${LABEL[a.vote]}` })));
-      bottom.append(h("button", { onclick: next, text: i + 1 < TOTAL ? "Next →" : "See final results 🏆" }));
-      bottom.append(miniBoard());
+        h("button", { class: "vote ai" + (v === "ai" ? " chosen" : v ? " dim" : ""), onclick: () => vote("ai"), text: LABEL.ai }),
+        h("button", { class: "vote real" + (v === "real" ? " chosen" : v ? " dim" : ""), onclick: () => vote("real"), text: LABEL.real })));
+      bottom.append(h("p", { class: "center muted small", text: v ? `Locked in: ${LABEL[v]}. Waiting for everyone else… (you can still change it)` : "Tap your guess. Quicker = more points!" }));
+    }
+
+    if (S.phase === "reveal") {
+      const r = S.you && S.you.result;
+      top.append(h("div", { class: "center muted", text: `Item ${S.index + 1} of ${S.total}` }));
+      bottom.append(h("div", { class: "result " + S.answer },
+        h("div", { class: "small", text: "It was…" }), h("div", { class: "huge", text: LABEL[S.answer] }),
+        S.note ? h("div", { text: S.note }) : null));
+      let msg = "No guess this time", sub = "";
+      if (r && r.correct) { msg = `✅ You got it! +${r.gained}`; }
+      else if (r && r.voted) { msg = "❌ Not this time"; }
+      if (S.counts) sub = `${S.counts.ai} said AI · ${S.counts.real} said Real`;
+      bottom.append(h("div", { class: "card center" }, h("p", { class: "big", text: msg }),
+        h("p", { class: "muted", text: `${S.you ? S.you.score : 0} points · rank #${S.you && S.you.rank ? S.you.rank : "–"} of ${S.players}` }),
+        sub ? h("p", { class: "small muted", text: sub }) : null));
+      if (S.board && S.board.length) bottom.append(h("div", { class: "card" },
+        h("div", { class: "mini-h" }, h("strong", { text: "Leaderboard" }), h("span", { class: "muted small", text: `after ${S.index + 1} of ${S.total}` })),
+        boardList(S.board, 5)));
+    }
+
+    if (S.phase === "board" || S.phase === "final") {
+      const fin = S.phase === "final";
+      top.append(h("div", { class: "card" },
+        h("p", { class: (fin ? "huge" : "big") + " center", text: fin ? "🏆 Final results" : "Leaderboard" }),
+        boardList(S.board, 10)));
+      if (fin && S.you) top.append(h("p", { class: "center big", text: S.you.rank === 1 ? ((S.board || []).filter(r => r.score === S.you.score).length > 1 ? "🎉 Tied for 1st! Merry Christmas!" : "🎉 You won! Merry Christmas!") : `You finished #${S.you.rank}. Merry Christmas! 🎄` }));
+      else top.append(h("p", { class: "center muted", text: "Next one coming up…" }));
+      if (fin && S.you) top.append(h("div", { class: "card center" },
+        h("p", { class: "big", text: `You got ${S.you.correct} of ${S.total} right` }),
+        h("p", { class: "muted", text: S.you.fooled ? `AI fooled you ${S.you.fooled} time${S.you.fooled === 1 ? "" : "s"} 🤖` : "AI never fooled you once! 🕵️" })));
+      if (fin && S.hardest) top.append(h("div", { class: "card center" }, h("p", { class: "small muted", text: "Fooled the most people" }),
+        h("p", { class: "big", text: `Item ${S.hardest.index + 1}: it was ${LABEL[S.hardest.answer]}` }),
+        h("p", { text: `Only ${S.hardest.right} of ${S.hardest.voters} got it right.` })));
     }
   }
 

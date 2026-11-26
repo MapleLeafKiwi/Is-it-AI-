@@ -1,8 +1,8 @@
 # LED in Action Christmas Dinner: Real or AI? 🎄
 
-Everyone scans a QR code, picks a name, and works through the pictures and videos **at their own pace**. Each player taps **AI** or **Real**. Their first tap locks in the answer, the correct answer shows straight away, and they tap **Next** when ready. A live leaderboard shows everyone's score and progress.
+Everyone scans a QR code, picks a name, and sees the same picture or video on their own phone at the same time. They guess **AI** or **Real**, you reveal the answer to everyone at once, and a leaderboard tracks the scores. You run the game from your phone.
 
-**Scoring:** 100 points for a correct guess, plus a speed bonus of up to 50 points for answering quickly. The bonus drops to 0 after 20 seconds, counted from when the item finishes loading.
+**Scoring:** 100 points for a correct guess, plus a speed bonus of up to 50 points for answering quickly. The bonus drops to 0 after 20 seconds. Players can change their guess any time before you reveal the answer.
 
 ---
 
@@ -35,10 +35,15 @@ To change items later, edit `items.js` on GitHub or upload new media. The live s
 
 ## 3. Run the game
 
-1. On your phone, open `https://mapleleafkiwi.github.io/Is-it-AI-/?host`. You'll see the QR code and a live leaderboard.
-2. **Turn off auto-lock on your phone.** Your phone keeps the leaderboard in sync. If it sleeps, people can still keep playing, but the leaderboard pauses until your screen is back on.
-3. Players scan, type their name and start playing right away.
-4. Tap **Hide QR code** to show just the leaderboard. Anyone who refreshes their page carries on where they left off.
+1. On your phone, open `https://mapleleafkiwi.github.io/Is-it-AI-/?host`. You'll see a QR code.
+2. **Turn off auto-lock on your phone.** Your phone runs the game, so if it sleeps, players drop off. They reconnect on their own once your screen is back on.
+3. Players scan, type their name and tap **Join**. Tap **Start game** when everyone's in.
+4. For each item:
+   - You'll see **⏳ Waiting on …** with the names of anyone still deciding. When everyone has answered, it switches to **✅ Everyone has answered!** and the Reveal button turns green.
+   - If someone's distracted or stuck, tap **Reveal now (skip N still deciding)**. Anyone who didn't answer gets 0 for that item.
+   - Faded names are phones that have disconnected. The game doesn't wait for them.
+   - After the reveal, every phone shows the answer, how the table split, and a top-5 leaderboard. Tap **Next item →** when you're ready. You can take as long as you like between items, such as between courses.
+5. After the last item, tap **Final results 🏆**. Everyone sees the podium, how many they got right, how often AI fooled them, and the item that fooled the most people.
 
 ## Do a test run first
 
