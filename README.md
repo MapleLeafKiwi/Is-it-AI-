@@ -1,8 +1,8 @@
-# Real or AI? 🎄: Christmas party game
+# LED in Action Christmas Dinner: Real or AI? 🎄
 
-Everyone scans a QR code and sees the same picture or video on their own phone. They guess **AI** or **Real**, you reveal the answer, and a leaderboard tracks the scores. You run the whole game from your phone.
+Everyone scans a QR code, picks a name, and works through the pictures and videos **at their own pace**. Each player taps **AI** or **Real**. Their first tap locks in the answer, the correct answer shows straight away, and they tap **Next** when ready. A live leaderboard shows everyone's score and progress.
 
-**Scoring:** 100 points for a correct guess, plus a speed bonus of up to 50 points for answering quickly (it drops to 0 after 20 seconds). Players can change their guess any time before you reveal the answer.
+**Scoring:** 100 points for a correct guess, plus a speed bonus of up to 50 points for answering quickly. The bonus drops to 0 after 20 seconds, counted from when the item finishes loading.
 
 ---
 
@@ -35,16 +35,10 @@ To change items later, edit `items.js` on GitHub or upload new media. The live s
 
 ## 3. Run the game
 
-1. On your phone, open `https://<your-username>.github.io/xmas-game/?host`. You'll see a QR code.
-2. **Turn off auto-lock on your phone** (iPhone: Settings → Display & Brightness → Auto-Lock → Never). Your phone is the game server, so if it sleeps, players drop off. They reconnect on their own once your screen is back on.
-3. Players scan the QR code, type their name and tap **Join**. You'll see each name appear.
-4. Tap **Start game**. For each item:
-   - Players vote. You see who has voted, and you can tap to peek at the answer.
-   - Tap **Reveal answer**. Every phone shows the answer, whether that player was right, their points and their rank.
-   - Tap **Leaderboard** (optional) or **Next item →**.
-5. After the last item, tap **Final results 🏆**.
-
-Late arrivals: tap **Show join QR** at any point during the game. They join with 0 points.
+1. On your phone, open `https://mapleleafkiwi.github.io/Is-it-AI-/?host`. You'll see the QR code and a live leaderboard.
+2. **Turn off auto-lock on your phone.** Your phone keeps the leaderboard in sync. If it sleeps, people can still keep playing, but the leaderboard pauses until your screen is back on.
+3. Players scan, type their name and start playing right away.
+4. Tap **Hide QR code** to show just the leaderboard. Anyone who refreshes their page carries on where they left off.
 
 ## Do a test run first
 
@@ -57,7 +51,7 @@ Open the `?host` link on your laptop and scan the QR code with your phone, or op
 | A player is stuck on "Connecting…" | Have them refresh. If it still fails, ask them to switch between wifi and mobile data. |
 | Your host page refreshed by accident | Just reopen the `?host` link. The game, scores and QR code are saved, and players reconnect on their own. |
 | "Game ID busy" | You have the host page open in two tabs. Close one. |
-| You want a completely fresh game | Tap **Reset everything** at the bottom of the host screen. This makes a new QR code. |
+| You want a completely fresh game | Tap **Reset everything** on the host screen. This makes a new QR code, and everyone starts from item 1. |
 | A picture doesn't show up | Check that the filename in `items.js` matches the file exactly, including capital letters. |
 
 **How it works:** the page connects your phone directly to each player's phone using PeerJS, a free connection service, so there's no server or account to set up. It needs internet on every phone.
