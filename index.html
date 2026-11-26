@@ -208,6 +208,8 @@ function hostMode() {
     peer.on("open", () => { status = "Live"; statusOk = true; render(); });
     peer.on("connection", conn => {
       conn.on("data", d => onData(conn, d));
+      const ask = () => { if (conn.open && !conn.pid) { try { conn.send({ t: "who" }); } catch (e) {} } };
+      conn.on("open", () => { ask(); setTimeout(ask, 1500); setTimeout(ask, 4000); });
       conn.on("close", () => { if (conn.pid && conns.get(conn.pid) === conn) { conns.delete(conn.pid); render(); } });
       conn.on("error", () => {});
     });
@@ -395,7 +397,7 @@ function playerMode(hostId) {
   let pid = store.get("rai_pid", null);
   if (!pid) { pid = rid(10); store.set("rai_pid", pid); }
   let name = store.get("rai_name", "");
-  let S = null, peer = null, conn = null, status = "", lastAttempt = 0;
+  let S = null, peer = null, conn = null, status = "", lastAttempt = 0, gotState = false;
 
   const head = h("header");
   const top = h("div");
@@ -419,8 +421,13 @@ function playerMode(hostId) {
     if (conn) { const old = conn; conn = null; try { old.close(); } catch (e) {} }
     const c = peer.connect(hostId, { reliable: true });
     conn = c;
-    c.on("open", () => { if (c !== conn) return; status = ""; c.send({ t: "hello", pid, name }); render(); });
-    c.on("data", d => { if (c !== conn || !d || d.t !== "state") return; S = d; if (S.next) preload(S.next); render(); });
+    c.on("open", () => { if (c !== conn) return; status = ""; gotState = false; c.send({ t: "hello", pid, name }); render(); });
+    c.on("data", d => {
+      if (c !== conn || !d) return;
+      if (d.t === "who") { try { c.send({ t: "hello", pid, name }); } catch (e) {} return; }
+      if (d.t !== "state") return;
+      gotState = true; S = d; if (S.next) preload(S.next); render();
+    });
     c.on("close", () => { if (c !== conn) return; status = "Reconnecting…"; lastAttempt = 0; render(); });
     c.on("error", () => {});
   }
@@ -429,6 +436,7 @@ function playerMode(hostId) {
     if (!name) return;
     if (!peer || peer.destroyed) { startPeer(); return; }
     if (peer.disconnected) { try { peer.reconnect(); } catch (e) {} return; }
+    if (conn && conn.open && !gotState) { try { conn.send({ t: "hello", pid, name }); } catch (err) {} }
     if (peer.open && (!conn || !conn.open) && Date.now() - lastAttempt > 20000) { if (!status) status = "Connecting…"; render(); openConn(); }
   }, 2000);
 
@@ -472,7 +480,7 @@ function playerMode(hostId) {
 
     if (!S) {
       top.append(h("div", { class: "card center" }, h("p", { class: "big", text: `Hi ${name}!` }),
-        h("p", { class: "muted", text: status || "Connecting to the game…" })));
+        h("p", { class: "muted", text: status || (conn && conn.open ? "Almost there — saying hi to the host…" : "Connecting to the game…") })));
       bottom.append(h("button", { class: "ghost", onclick: changeName, text: "Change name" }));
       return;
     }
