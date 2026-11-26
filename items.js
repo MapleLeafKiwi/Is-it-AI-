@@ -14,6 +14,7 @@
 window.ITEMS = [
   { file: "media/19.mp4", answer: "real", note: "Real footage." },
   { file: "media/10.mp4", answer: "real", note: "Real footage." },
+  { file: "media/23.jpg", answer: "ai",   note: "Made with Google Gemini." },
   { file: "media/15.mp4", answer: "ai",   note: "AI-generated video." },
   { file: "media/18.jpg", answer: "real", note: "Real photo." },
   { file: "media/06.mp4", answer: "ai",   note: "AI-generated interviews." },
@@ -25,6 +26,7 @@ window.ITEMS = [
   { file: "media/14.jpg", answer: "ai",   note: "Made with Google Gemini." },
   { file: "media/21.mp4", answer: "real", note: "Real! 'Charlie bit my finger' (2007), one of YouTube's most famous viral videos." },
   { file: "media/16.mp4", answer: "ai",   note: "AI-generated." },
+  { file: "media/24.jpg", answer: "real", note: "Real photo." },
   { file: "media/11.mp4", answer: "ai",   note: "AI-generated short." },
   { file: "media/17.jpg", answer: "real", note: "Real photo." },
   { file: "media/07.mp4", answer: "real", note: "Real home video." },
