@@ -429,7 +429,7 @@ function playerMode(hostId) {
     if (!name) return;
     if (!peer || peer.destroyed) { startPeer(); return; }
     if (peer.disconnected) { try { peer.reconnect(); } catch (e) {} return; }
-    if (peer.open && (!conn || !conn.open) && Date.now() - lastAttempt > 6000) { if (!status) status = "Connecting…"; render(); openConn(); }
+    if (peer.open && (!conn || !conn.open) && Date.now() - lastAttempt > 20000) { if (!status) status = "Connecting…"; render(); openConn(); }
   }, 2000);
 
   function vote(v) {
