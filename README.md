@@ -53,10 +53,10 @@ Open the `?host` link on your laptop and scan the QR code with your phone, or op
 
 | Problem | Fix |
 |---|---|
-| A player is stuck on "Connecting…" | Have them refresh. If it still fails, ask them to switch between wifi and mobile data. |
+| A player is stuck on "Connecting…" | Have them refresh. Make sure your host page is open. |
 | Your host page refreshed by accident | Just reopen the `?host` link. The game, scores and QR code are saved, and players reconnect on their own. |
 | "Game ID busy" | You have the host page open in two tabs. Close one. |
 | You want a completely fresh game | Tap **Reset everything** on the host screen. This makes a new QR code, and everyone starts from item 1. |
 | A picture doesn't show up | Check that the filename in `items.js` matches the file exactly, including capital letters. |
 
-**How it works:** the page connects your phone directly to each player's phone using PeerJS, a free connection service, so there's no server or account to set up. It needs internet on every phone.
+**How it works:** every phone talks through two free public relay servers (EMQX and Mosquitto) over a normal secure web connection, so it works on any wifi or mobile data. There's no server or account to set up.

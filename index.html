@@ -82,7 +82,7 @@
     background-image:radial-gradient(#fff 1px,transparent 1.5px),radial-gradient(#fff 1px,transparent 1.5px);
     background-size:60px 60px,90px 90px;background-position:0 0,30px 45px}
 </style>
-<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://unpkg.com/mqtt@5.16.1/dist/mqtt.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <script src="items.js"></script>
 </head>
@@ -187,9 +187,30 @@ function boardList(rows, limit) {
   return ol;
 }
 
+// ---------- relay (MQTT over secure websockets, two brokers for redundancy) ----------
+const BROKERS = ["wss://broker.emqx.io:8084/mqtt", "wss://test.mosquitto.org:8081/mqtt"];
+const topicBase = id => "lia-xmas-rai/v2/" + id;
+function makeNet(subs, onMsg, onChange, will) {
+  const clients = BROKERS.map(url => {
+    let c;
+    try {
+      c = mqtt.connect(url, { clientId: "rai-" + rid(12), clean: true, reconnectPeriod: 2500, connectTimeout: 10000, keepalive: 20, will });
+    } catch (e) { return null; }
+    c.on("connect", () => { c.subscribe(subs, { qos: 1 }); onChange("connect", c); });
+    for (const ev of ["reconnect", "offline", "close"]) c.on(ev, () => onChange(ev, c));
+    c.on("error", () => {});
+    c.on("message", (t, p) => { let d; try { d = JSON.parse(p.toString()); } catch (e) { return; } onMsg(t, d); });
+    return c;
+  }).filter(Boolean);
+  return {
+    get connected() { return clients.some(c => c.connected); },
+    publish(topic, obj, opts) { const str = JSON.stringify(obj); for (const c of clients) if (c.connected) { try { c.publish(topic, str, opts || { qos: 1 }); } catch (e) {} } }
+  };
+}
+
 const app = document.getElementById("app");
 const params = new URLSearchParams(location.search);
-if (typeof Peer === "undefined") {
+if (typeof mqtt === "undefined") {
   app.append(h("div", { class: "card center" }, h("p", { class: "big", text: "Couldn't load the game" }),
     h("p", { class: "muted", text: "Check your internet connection and refresh the page." })));
 } else if (params.has("host")) hostMode();
@@ -213,67 +234,62 @@ function hostMode() {
   if (!G || !G.hostId) G = { hostId: "rai-" + rid(8), phase: "lobby", index: -1, startedAt: 0, players: {} };
   const save = () => store.set("rai_host", G);
   save();
-  const conns = new Map();
+  if (!G.seq) G.seq = 0;
+  const base = topicBase(G.hostId);
+  const lastSeen = {};
+  let net = null;
   const joinUrl = location.origin + location.pathname + "?join=" + encodeURIComponent(G.hostId);
-  let status = "Connecting…", statusOk = false, peer = null, showQR = false;
+  let status = "Connecting…", statusOk = false, showQR = false;
 
   const head = h("div");
   const media = makeMediaSlot();
   const top = h("div"), bottom = h("div");
   app.append(head, top, media.wrap, bottom);
 
-  function startPeer() {
-    peer = new Peer(G.hostId);
-    peer.on("open", () => { status = "Live"; statusOk = true; render(); });
-    peer.on("connection", conn => {
-      conn.on("data", d => onData(conn, d));
-      const ask = () => { if (conn.open && !conn.pid) { try { conn.send({ t: "who" }); } catch (e) {} } };
-      conn.on("open", () => { ask(); setTimeout(ask, 1500); setTimeout(ask, 4000); });
-      conn.on("close", () => { if (conn.pid && conns.get(conn.pid) === conn) { conns.delete(conn.pid); render(); } });
-      conn.on("error", () => {});
-    });
-    peer.on("disconnected", () => {
-      status = "Reconnecting…"; statusOk = false; render();
-      setTimeout(() => { try { if (!peer.destroyed && peer.disconnected) peer.reconnect(); } catch (e) {} }, 1500);
-    });
-    peer.on("error", err => {
-      console.warn("peer error", err.type, err);
-      if (err.type === "unavailable-id") {
-        status = "Game ID busy (close other host tabs) — retrying…"; statusOk = false; render();
-        try { peer.destroy(); } catch (e) {}
-        setTimeout(startPeer, 4000);
-      } else if (peer.destroyed) { status = "Connection lost — retrying…"; statusOk = false; render(); setTimeout(startPeer, 3000); }
-    });
+  function startNet() {
+    net = makeNet([base + "/up"], (t, d) => onData(d), (ev) => {
+      const ok = net && net.connected;
+      if (ev === "connect") { net.publish(base + "/host", { live: true }, { qos: 1, retain: true }); broadcast(); }
+      status = ok ? "Live" : "Reconnecting…"; statusOk = ok; render();
+    }, { topic: base + "/host", payload: JSON.stringify({ live: false }), qos: 1, retain: true });
   }
-  // watchdog for the signalling connection
-  setInterval(() => { if (peer && !peer.destroyed && peer.disconnected) { try { peer.reconnect(); } catch (e) {} } }, 5000);
+  // keep the online/offline view fresh
+  let lastOnlineSig = "";
+  setInterval(() => {
+    const sig = Object.keys(G.players).filter(isOnline).sort().join(",");
+    if (sig !== lastOnlineSig) { lastOnlineSig = sig; render(); }
+  }, 2000);
 
-  function onData(conn, d) {
+  function onData(d) {
     if (!d || typeof d !== "object") return;
+    const pid = String(d.pid || "").slice(0, 40);
+    if (!pid) return;
+    const wasOnline = isOnline(pid);
+    lastSeen[pid] = Date.now();
     if (d.t === "hello") {
-      const pid = String(d.pid || "").slice(0, 40);
       const name = String(d.name || "").trim().slice(0, 24) || "Player";
-      if (!pid) return;
-      conn.pid = pid;
-      const old = conns.get(pid);
-      if (old && old !== conn) { try { old.close(); } catch (e) {} }
-      conns.set(pid, conn);
-      if (!G.players[pid]) G.players[pid] = { name, votes: {}, results: {} };
+      const isNew = !G.players[pid];
+      if (isNew) G.players[pid] = { name, votes: {}, results: {} };
       else G.players[pid].name = name;
-      save(); if (G.phase === "lobby") broadcast(); else sendTo(pid); render();
+      save(); if (G.phase === "lobby" && (isNew || !wasOnline)) broadcast(); else sendTo(pid); render();
     } else if (d.t === "vote") {
-      const p = G.players[conn.pid];
-      if (!p || G.phase !== "question" || d.index !== G.index || (d.vote !== "ai" && d.vote !== "real")) { if (conn.pid) sendTo(conn.pid); return; }
+      const p = G.players[pid];
+      if (!p) return;
+      if (G.phase !== "question" || d.index !== G.index || (d.vote !== "ai" && d.vote !== "real")) { sendTo(pid); return; }
+      const prev = p.votes[G.index];
+      if (prev && prev.vote === d.vote) return; // duplicate from the second relay
       p.votes[G.index] = { vote: d.vote, at: Date.now() };
-      save(); sendTo(conn.pid); render();
+      save(); sendTo(pid); render();
+    } else if (d.t === "ping") {
+      if (!wasOnline) { sendTo(pid); render(); }
     }
   }
 
+  const isOnline = pid => Date.now() - (lastSeen[pid] || 0) < 12000;
   const scoreOf = p => Object.values(p.results || {}).reduce((s, r) => s + (r.gained || 0), 0);
   const ranking = () => Object.entries(G.players).map(([pid, p]) => ({ pid, name: p.name, score: scoreOf(p) }))
     .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
   const rankOf = (pid, R) => { const me = R.find(r => r.pid === pid); return me ? 1 + R.filter(r => r.score > me.score).length : null; };
-  const isOnline = pid => conns.has(pid) && conns.get(pid).open;
   function itemStats() {
     const out = [];
     for (let i = 0; i < ITEMS.length; i++) {
@@ -291,7 +307,7 @@ function hostMode() {
 
   function stateFor(pid) {
     const p = G.players[pid], R = ranking(), it = ITEMS[G.index], nx = ITEMS[G.index + 1];
-    const s = { t: "state", phase: G.phase, index: G.index, total: ITEMS.length, players: R.length };
+    const s = { t: "state", seq: ++G.seq, phase: G.phase, index: G.index, total: ITEMS.length, players: R.length };
     if ((G.phase === "question" || G.phase === "reveal") && it) s.item = { src: it.src, type: it.type };
     if (nx && G.phase !== "final") s.next = { src: nx.src, type: nx.type };
     else if (G.phase === "lobby" && ITEMS[0]) s.next = { src: ITEMS[0].src, type: ITEMS[0].type };
@@ -306,8 +322,8 @@ function hostMode() {
     }
     return s;
   }
-  function sendTo(pid) { const c = conns.get(pid); if (c && c.open) { try { c.send(stateFor(pid)); } catch (e) {} } }
-  function broadcast() { for (const pid of conns.keys()) sendTo(pid); }
+  function sendTo(pid) { if (net && net.connected && G.players[pid]) net.publish(base + "/p/" + pid, stateFor(pid), { qos: 1, retain: true }); }
+  function broadcast() { for (const pid of Object.keys(G.players)) sendTo(pid); save(); }
 
   function go(i) { G.index = i; G.phase = "question"; G.startedAt = Date.now(); save(); broadcast(); render(); }
   function reveal() {
@@ -344,7 +360,7 @@ function hostMode() {
   function playerChips(markVoted) {
     const wrap = h("div", { class: "chips" });
     for (const r of ranking()) {
-      const online = conns.has(r.pid) && conns.get(r.pid).open;
+      const online = isOnline(r.pid);
       const voted = markVoted && G.players[r.pid].votes[G.index];
       const waiting = markVoted && online && !voted;
       wrap.append(h("span", { class: "chip" + (online ? "" : " off") + (voted ? " done" : "") + (waiting ? " wait" : ""), text: (voted ? "✓ " : waiting ? "⏳ " : "") + r.name }));
@@ -354,7 +370,7 @@ function hostMode() {
 
   function render() {
     head.replaceChildren(brand(), h("div", { class: "center" },
-      h("span", { class: "pill " + (statusOk ? "ok" : "warn"), text: `Host · ${status} · ${conns.size} online` })));
+      h("span", { class: "pill " + (statusOk ? "ok" : "warn"), text: `Host · ${status} · ${Object.keys(G.players).filter(isOnline).length} online` })));
     top.replaceChildren(); bottom.replaceChildren();
     const it = ITEMS[G.index];
     const total = ITEMS.length;
@@ -439,7 +455,7 @@ function hostMode() {
   }
 
   render();
-  startPeer();
+  startNet();
 }
 
 // ---------- PLAYER ----------
@@ -447,7 +463,8 @@ function playerMode(hostId) {
   let pid = store.get("rai_pid", null);
   if (!pid) { pid = rid(10); store.set("rai_pid", pid); }
   let name = store.get("rai_name", "");
-  let S = null, peer = null, conn = null, status = "", lastAttempt = 0, gotState = false;
+  let S = null, net = null, status = "", gotState = false, hostLive = null, lastSeq = 0;
+  const base = topicBase(hostId);
 
   const head = h("div");
   const top = h("div");
@@ -455,44 +472,29 @@ function playerMode(hostId) {
   const bottom = h("div");
   app.append(head, top, media.wrap, bottom);
 
-  function startPeer() {
-    if (peer && !peer.destroyed) return;
-    peer = new Peer();
-    peer.on("open", () => { lastAttempt = 0; openConn(); });
-    peer.on("disconnected", () => { setTimeout(() => { try { if (!peer.destroyed && peer.disconnected) peer.reconnect(); } catch (e) {} }, 1000); });
-    peer.on("error", err => {
-      if (err.type === "peer-unavailable") { status = "Waiting for the host… (is their game open?)"; render(); }
-      else console.warn("peer error", err.type, err);
-    });
-  }
-  function openConn() {
-    if (!peer || !peer.open) return;
-    lastAttempt = Date.now();
-    if (conn) { const old = conn; conn = null; try { old.close(); } catch (e) {} }
-    const c = peer.connect(hostId, { reliable: true });
-    conn = c;
-    c.on("open", () => { if (c !== conn) return; status = ""; gotState = false; c.send({ t: "hello", pid, name }); render(); });
-    c.on("data", d => {
-      if (c !== conn || !d) return;
-      if (d.t === "who") { try { c.send({ t: "hello", pid, name }); } catch (e) {} return; }
+  const send = obj => { if (net && net.connected) net.publish(base + "/up", obj, { qos: 1 }); };
+  const hello = () => send({ t: "hello", pid, name });
+  function startNet() {
+    if (net) return;
+    net = makeNet([base + "/p/" + pid, base + "/host"], (t, d) => {
+      if (!d) return;
+      if (t === base + "/host") { hostLive = !!d.live; if (!hostLive) status = ""; render(); return; }
       if (d.t !== "state") return;
+      if (d.seq && d.seq < lastSeq) return; // older copy from the slower relay
+      if (d.seq) lastSeq = d.seq;
       gotState = true; S = d; if (S.next) preload(S.next); render();
+    }, ev => {
+      if (ev === "connect") { status = ""; hello(); }
+      else if (!net.connected) status = "Reconnecting…";
+      render();
     });
-    c.on("close", () => { if (c !== conn) return; status = "Reconnecting…"; lastAttempt = 0; render(); });
-    c.on("error", () => {});
   }
-  // watchdog: keep trying until connected (handles phone sleep, wifi swaps, host reloads)
-  setInterval(() => {
-    if (!name) return;
-    if (!peer || peer.destroyed) { startPeer(); return; }
-    if (peer.disconnected) { try { peer.reconnect(); } catch (e) {} return; }
-    if (conn && conn.open && !gotState) { try { conn.send({ t: "hello", pid, name }); } catch (err) {} }
-    if (peer.open && (!conn || !conn.open) && Date.now() - lastAttempt > 20000) { if (!status) status = "Connecting…"; render(); openConn(); }
-  }, 2000);
+  // keep saying hello until the host answers, then send a heartbeat so the host knows we're here
+  setInterval(() => { if (!name || !net) return; if (!gotState) hello(); else send({ t: "ping", pid }); }, 4000);
 
   function vote(v) {
-    if (!S || S.phase !== "question" || !conn || !conn.open) return;
-    conn.send({ t: "vote", index: S.index, vote: v });
+    if (!S || S.phase !== "question" || !net || !net.connected) return;
+    send({ t: "vote", pid, index: S.index, vote: v });
     if (S.you) S.you.vote = v; else S.you = { vote: v, score: 0 };
     if (navigator.vibrate) navigator.vibrate(30);
     render();
@@ -508,7 +510,7 @@ function playerMode(hostId) {
       name = v; store.set("rai_name", v); store.set("rai_last_name", v);
       keepAwake();
       status = "Connecting…"; render();
-      if (conn && conn.open) conn.send({ t: "hello", pid, name }); else startPeer();
+      if (net) hello(); else startNet();
     };
     const f = h("form", { onsubmit: go }, h("p", { class: "big", text: "Join the game 🎄" }),
       h("p", { class: "muted", text: "Look at each picture or video and guess: real, or made by AI?" }),
@@ -530,7 +532,7 @@ function playerMode(hostId) {
 
     if (!S) {
       top.append(h("div", { class: "card center" }, h("p", { class: "big", text: `Hi ${name}!` }),
-        h("p", { class: "muted", text: status || (conn && conn.open ? "Almost there — saying hi to the host…" : "Connecting to the game…") })));
+        h("p", { class: "muted", text: status || (!net || !net.connected ? "Connecting to the game…" : hostLive === false ? "Waiting for the host to open the game…" : "Almost there — saying hi to the host…") })));
       bottom.append(h("button", { class: "ghost", onclick: changeName, text: "Change name" }));
       return;
     }
@@ -588,7 +590,7 @@ function playerMode(hostId) {
   }
 
   render();
-  if (name) startPeer();
+  if (name) startNet();
 }
 </script>
 </body>
